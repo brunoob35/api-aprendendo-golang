@@ -1,74 +1,100 @@
-Objetivos entrega 3:
-1. Completar o Uders Model com os métodos que faltam
-2. Implementar funcionalidades do CRUD de Users
-3. Criar um script de utilidades para validação de CPF
+Objetivos entrega 4:
+- Criptografia e salvamento das senhas criptgrafadas
 
-### Completando os metodos do Users Model:
-1. Completar Prep()
-    - já está praticamente pronto já que temos as funções que ele precisa chamar já preparadas
+### Criando o pacote Security
+1. Função Hash
+2. Função ValidatePassword
+3. Adicionada a chamada para Hash() dentro da de models/users.format()
+4. Confirmar se a senha salva no DB agora está "hasheada"
 
-2. Completar validatee()
-    - verificar strings em branco
-    - verificar se o email existe de fato
-    - validar se o CPF é válido
-    - verifica se a senha está em branco caso passo for cadastro
+### Login
+1. Como agora teremos rotas que exigem autenticação do Usuário, queremos marcar rotas que deverão passar por uma verificação de autenticação
+2. Vamos atualizar nossa struct de rotas e acrescentar o campo de Auth
+3. Vamos atualizar nossas rotas já criadas e adicionar o campo Auth em cada uma
+4. Vamos criar uma rota para Login também com um novo arquivo
+5. Vamos criar a função de Login no controller
 
-3. Completar format()
-    - Trim spaces
-    - Adequa todo para lower case
-    - no futuro vamos criptografar a senha aqui também
+### Controller Login
+1. Processo padrão que já fazemos, lê o body
+2. Unmarshal do Body em uma var do tipo Users
+3. Abrimos conexão com o banco (lembra do defer na conexão também)
+4. Chamamos um novo repositório de Usuários
 
-4. Validador de CPF
-   Como fazemos uma validação de CPF? https://www.macoratti.net/alg_cpf.htm
-- Crimaos uma nova pasta na raiz do projeto "utils"
-- Fazemos a verificação com os tres passos
+### Repositório de Users
+1. Aqui vamos criar um novo metodo de consulta no banco que vai retornar só o Id, email a senha do User
+2. Pq no repo Users e não criar um novo repo de login?
+3. Criamos o metodo FetchByEmail que faz um Select no Banco e reotrna apenas os dados que queremos
 
-### Create()
-- Lê o body
-- Descomprimi o conteudo
-- Prepara o caminho para o Repo
-- Responde
+### Coltando para o Controller Login
+1. Agora com os dados salvos no DB e os dados da requisição em mãos
+2. Podemos chamar o security.ValidatePassword()
+3. Você está logado
+    ```w.Write([]byte("User logged in"))```
+4. Vamos testar!
 
-### Criar um pacote de respostas para padronizar (basicamente a função que já tinhamos dentro do books_handler)
-- Criamos dois metodos diferentes, uma para as respostas e outro para os erros
-
-### Criando o Banco
-- Criamos a pasta sql
-- Criamos o ddl.sql
-- Colocamos o script do ddl ali
-
-
-### Preparando ambiente de configuração da aplicação
-- Criamos o novo modulo "config"
-- Criamos o .env no config
-- Criamos a função LoadEnv() em config
-- Editamos o main para passar a chamar config.LoadEnv()
-- Criamos o gitignore e adicionamos o env nele para que não suba ao github
+### Token de autenticação JWT (JSON Web Token)
+1. Criamos o pacote token e o arquivo token.go
+2. Importamos a lib JWT-go
+3. Criamos uma função GenerateToken() que receberá um Id de usuário
 ```
-DB_USER=admin
-DB_PASSWORD=sua_senha_aqui
-DB_ADDR=treehouse-db.ctuc44aqwph2.us-east-2.rds.amazonaws.com:3306
-DB_DATABASE=treehouse-db
-```
-- cria o .gitignore na raiz do projeto
-```
-.env
-```
+    // para teste geramos com um secret simples
+   permissions := jwt.MapClaims{}
+	permissions["authorized"] = true
+	permissions["exp"] = time.Now().Add(time.Hour * 6).Unix() // tempo para expirar o token
+	permissions["userId"] = userID
 
-### Criar o pacote persistency
-- Criamos a nova pasta persistency a partir da raiz do projeto
-- Criamos o arquivo database dentro de persistency
-- usamos o pacote database/sql para configurar o banco na função Connect()
-- testamos a conexão com o banco
+	// jwt.SigningMethodHS256 é um de muitos diferentes métodos para assinatura do token
+	token := jwt.NewWithClaims(jwt.SigningMethodHS256, permissions)
+	return token.SignedString([]byte("secret"))
+```
+```
+    // em Login() somente para vermos o token gerado
+    token, _ := auth.GenerateToken(uint64(userSalvoemDB.ID))
+	fmt.Println(token)
+```
+4. Agora que foi testada a função que gera Token, vamos criar um Secret melhor!
+5. Para este metodo de assinatura é recomendado uma chave de 64bytes
 
-### Criando a estrutura do Repositório
-- Dentro do repository/users vamos criar o type UsersRepo
-- Criar ao metodo UsersNewRepo
-- Editar o metodo Create dentro do repositorio
-- Voltamos no CRUD para conectar nosso controller com o repo
+### Criando o Secrets
+1. Conseguimos criar essa chave usando pacotes do próprio Go
+2. Dentro do pacote main vamos criar uma função init() que vai rodar antes mesmo da main()
+```
+func init() {
+	chave := make([]byte, 64)
+	fmt.Println(chave)
 
-### Desafio 4: Voltar no CRUD e fazer os ajustes fazendo as chamadas para o banco depois chamando o repositório para salvar os dados
-- Senhas precisam ser salvas criptografadas!!!
-- vamos criar outra camada (security) para colocar as funções de criptografia da senha
-- essa camada deve ter dois metodos: um para criptografar a senha e salvar o Hash no banco
-- outro para ler um hash vindo do banco e fazer o processo de comparação com o conteudo vindo na requeisição para validar a entrada de um novo usuário
+	if _, err := rand.Read(chave); err != nil {
+		log.Fatal(err)
+	}
+	fmt.Println(string(chave))
+
+	stringBase64 := base64.StdEncoding.EncodeToString(chave)
+	fmt.Println(stringBase64)
+}
+```
+3. Essa função vai gerar um slice de 64bytes que vamos salvar no .env em SECRET_KEY
+4. Depois disso podemos deletar a função Init()
+
+### Middlewares - Camada que fica entre a requisição e a resposta
+1. Primeiro criamos o pacote e a função Autenticate, recebendo os parametros w e r
+2. Atualizamos nosso roteador para que no loop que carrega nossas rotas, seja feita também a chamada do middleware
+3. Criamos a função Logger também para criar um registro das chamadas dentro da API
+4. Esse logger chamamos antes do Autenticate e também dentro das rotas que não precisam de autenticação
+
+### Autenticação
+1. Agora que temos o middleware sendo executado em todas as rotas, vamos continuar o processo de validação do token
+2. vamos criar o extractToken() que vai seprar o token do seu container
+3. ValidateToken() vai validar este token extraido para autenticação de fato
+4. Antes de terminar a validação vou verificar se a chave de autenticação é a mesma do token recebido, por segurança
+
+### Desafio 5 Biblioteca Funcional:
+- Agora que temos Users e um Login funcional, o desafio é criar as funcionalidades de CRUD dos livros
+- Queremos que quando o usuário estiver logado ele seja capaz de pesquisar por um livro, que será vinculado aquele usuario
+- Assim poderemos ver a biblioteca particular daquele usuario
+- Para isso, além da pesquisa de livros, sejamos capazes de vincular o livro ao user
+- Editar livro do user
+- Deletar livro da biblioteca deste user
+- Visualizar todos os livros da biblioteca deste User
+- Você terá que modelar a camada de Livros
+- E também deverá criar tabelas no banco que se relacionem a tabela de users, a fim de vincular estes livros salvos a algum user
+

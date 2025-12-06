@@ -1,6 +1,7 @@
 package models
 
 import (
+	"Api-Aula1/security"
 	"Api-Aula1/utils"
 	"errors"
 	"strings"
@@ -66,15 +67,15 @@ func (u *Users) format(step string) error {
 	u.Name = strings.ToLower(u.Name)
 	u.Email = strings.ToLower(u.Email)
 
-	// Todo: Proxima aula
-	//if step == "register" {
-	//	hashedPassword, err := security.Hash(u.Password)
-	//	if err != nil {
-	//		return err
-	//	}
-	//
-	//	u.Password = string(hashedPassword)
-	//}
+	// Todo: Chamada da criação do Hash de senha apenas quando estamos criando um novo User
+	if step == "register" {
+		hashedPassword, err := security.Hash(u.Password)
+		if err != nil {
+			return err
+		}
+
+		u.Password = string(hashedPassword)
+	}
 
 	return nil
 }
